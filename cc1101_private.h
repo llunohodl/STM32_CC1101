@@ -1,100 +1,31 @@
 /*
- * ESP32 driver library for TI CC1100 Low-Power Sub-1 GHz RF Transceiver
+ * STM32 driver library for TI CC1100 Low-Power Sub-1 GHz RF Transceiver
  *
- * Based on https://github.com/SpaceTeddy/CC1101, by Christian Weithe
+ * Based on https://github.com/loboris/ESP32_CC1101
  *
- * Modified and adapted for ESP32 by:
- * LoBo, https://github.com/loboris;  06/2017
+ * Modified and adapted for STM32 by: https://github.com/llunohodl  03/2021
  *
  */
 
-#ifndef _LIBCC1100_H
-#define _LIBCC1100_H
+#ifndef _CC1101_PRIVATE_H
+#define _CC1101_PRIVATE_H
 
-#include <stdint.h>
-#include "sdkconfig.h"
-
-/* Library version
- * If NVS is used, version is saved to NVS
- * When different version is found on boot,
- * default CC1101 parameters are used and saved to NVS
- */
-//==========================
-#define CC1100_VERSION	0x02
-//==========================
-
-// ==============================================
-// Set to 1 to use NVS to store CC1101 parameters
-// ==============================================
-#ifdef CONFIG_CC1101_USE_NVS
-#define USE_NVS	1
-#else
-#define USE_NVS	1
-#endif
-
-// ============================
-// ==== Default parameters ====
-// ============================
-#define DEFAULT_CC1100_MYADDRESS	CONFIG_CC1101_ADDRESS
-#define DEFAULT_CC1100_FREQUENCY	CONFIG_CC1101_FREQ
-#define DEFAULT_CC1100_MODE			CONFIG_CC1101_MODE
-#define DEFAULT_CC1100_CHANNEL		CONFIG_CC1101_CHANNEL
-#define DEFAULT_CC1100_POWER		CONFIG_CC1101_POWER_LEVEL
-
-// ==============================================================
-// ==== Define which SPI bus to use (VSPI_HOST or HSPI_HOST) ====
-// ==============================================================
-#define SPI_BUS VSPI_HOST
-
-
-#if USE_NVS
-// ========================================
-// ==== NVS keys for CC1101 parameters ====
-// ========================================
-#define NVS_NAMESPACE	"CC1100params"
-
-#define NVS_CC1100_FREQUENCY "CC_FREQUENCY"	//ISM band
-#define NVS_CC1100_MODE      "CC_MODE"		//modulation mode
-#define NVS_CC1100_MY_ADDR   "CC_MY_ADDR"	//receiver address
-#define NVS_CC1100_CHANNEL   "CC_CHANNEL"	//channel number
-#define NVS_CC1100_POWER	 "CC_POWER"		//power level
-#define NVS_CC1100_VERSION	 "CC_VERSION"	//power level
-#endif
-
-// ========================
-// ==== Used GPIO pins ====
-// ========================
-#define SCK_PIN		18	// SPI CLOCK
-#define MISO_PIN	19	// SPI MISO (input)
-#define MOSI_PIN	23	// SPI MOSI
-#define SS_PIN		 5	// SPI CS
-#define GDO2		25	// input from GD02
-#define GDO0		36	// ADC input, set to 0 if you don't want to use it
+#include "stdint.h"
 
 // ========================================
-// === CC1100 - miscellaneous constants ===
+// === CC1101 - miscellaneous constants ===
 // ========================================
 #define CRYSTAL_FREQUENCY         26000000
 #define CFG_REGISTER              0x2F  // 47 registers
 #define FIFOBUFFER                0x42  // size of FIFO Buffer
-#define RSSI_OFFSET_868MHZ        0x4E  // decimal = 74
+#define RSSI_OFFSET               0x4E  // decimal = 74
 #define TX_RETRIES_MAX            0x05  // tx_retries_max
 #define ACK_TIMEOUT                100  // ACK timeout in ms
 #define CC1100_COMPARE_REGISTER   0x00  // register compare; 0=no compare 1=compare
-#define BROADCAST_ADDRESS         0x00  // broadcast address
-#define CC1100_FREQ_315MHZ        0x01
-#define CC1100_FREQ_434MHZ        0x02
-#define CC1100_FREQ_868MHZ        0x03
-#define CC1100_FREQ_915MHZ        0x04
-//#define CC1100_FREQ_2430MHZ       0x05
-// Temperature sensor calibration constants
-#define CC1100_TEMP_ADC_MV        0.265681	// 1.1V/4096 . mV per digit
-#define CC1100_TEMP_CELS_CO       2.47		// Temperature coefficient 2.47mV per Degree Celsius
-#define CC1100_TEMP_V_AT_TEMP     809		// Voltage at known temperature in mV
-#define CC1100_KNOWN_TEMP         26.5		// Known temperature at which the voltage was measured
+
 
 // ==============================
-// ==== CC1100 - R/W offsets ====
+// ==== CC1101 - R/W offsets ====
 // ==============================
 #define WRITE_SINGLE_BYTE   0x00
 #define WRITE_BURST         0x40
@@ -102,7 +33,7 @@
 #define READ_BURST          0xC0
 
 // ================================
-// ==== CC1100 - FIFO commands ====
+// ==== CC1101 - FIFO commands ====
 // ================================
 #define TXFIFO_BURST        0x7F    //write burst only
 #define TXFIFO_SINGLE_BYTE  0x3F    //write single only
@@ -112,7 +43,7 @@
 #define PATABLE_SINGLE_BYTE 0xFE    //power control read/write
 
 // ==========================================
-// ==== CC1100 - configuration registers ====
+// ==== CC1101 - configuration registers ====
 // ==========================================
 #define IOCFG2   0x00         // GDO2 output pin configuration
 #define IOCFG1   0x01         // GDO1 output pin configuration
@@ -163,7 +94,7 @@
 #define TEST0    0x2E         // Various test settings
 
 // ================================
-// ==== CC1100-command strobes ====
+// ==== CC1101-command strobes ====
 // ================================
 #define SRES     0x30         // Reset chip
 #define SFSTXON  0x31         // Enable/calibrate freq synthesizer
@@ -181,7 +112,7 @@
 #define SNOP     0x3D         // No operation.
 
 // ==================================
-// ==== CC1100 - status register ====
+// ==== CC1101 - status register ====
 // ==================================
 #define PARTNUM        0xF0   // Part number
 #define VERSION        0xF1   // Current version number
@@ -198,66 +129,23 @@
 #define RCCTRL1_STATUS 0xFC   //Last RC Oscillator Calibration Result
 #define RCCTRL0_STATUS 0xFD   //Last RC Oscillator Calibration Result
 
+/* HAL functions defined at libcc1100_hal.c */
+void cc1101_delayMicroseconds(uint32_t us);
+void cc1101_delay(int ms);
 
-// ==========================
-// ==== Public variables ====
-// ==========================
-int8_t last_rssi_dbm;
-uint8_t last_lqi;
-uint8_t last_crc;
-uint8_t debug_level;
+void cc1101_ss_pin_set();
+void cc1101_ss_pin_reset();
 
-// ==========================
-// ==== Public functions ====
-// ==========================
+uint8_t cc1101_spi_begin(void);
+void cc1101_spi_end(void);
+void cc1101_spi_send(uint8_t *data, uint32_t len);
+void cc1101_spi_write_strobe(uint8_t spi_instr);
+uint8_t cc1101_spi_read_register(uint8_t spi_instr);
+void cc1101_spi_write_register(uint8_t spi_instr, uint8_t value);
+void cc1101_spi_write_burst(uint8_t spi_instr, uint8_t *pArr, uint8_t length, uint8_t *rdback);
 
-uint8_t cc_setup(uint8_t *My_addr, uint8_t dbg);
-void cc_end(void);
+/* RF configuration setup defined at libcc1100_rf_config.c */
 
-void reset(void);
-void wakeup(void);
-void powerdown(void);
-uint8_t sidle(void);
-uint8_t transmit(void);
-uint8_t receive(void);
+void cc1101_configure();
 
-void show_register_settings(void);
-void show_main_settings(void);
-
-uint8_t packet_available();
-uint8_t wait_for_packet(uint8_t milliseconds);
-
-uint8_t get_payload(uint8_t rxbuffer[], uint8_t *pktlen_rx,uint8_t *my_addr, uint8_t *sender);
-
-void tx_payload_burst(uint8_t my_addr, uint8_t rx_addr, uint8_t *txbuffer, uint8_t length);
-void rx_payload_burst(uint8_t rxbuffer[], uint8_t *pktlen);
-
-void rx_fifo_erase(uint8_t *rxbuffer);
-void tx_fifo_erase(uint8_t *txbuffer);
-
-uint8_t send_packet(uint8_t my_addr, uint8_t rx_addr, uint8_t *txbuffer, uint8_t pktlen, uint8_t tx_retries);
-void send_acknowledge(uint8_t my_addr, uint8_t tx_addr);
-
-uint8_t check_acknowledge(uint8_t *rxbuffer, uint8_t pktlen, uint8_t sender, uint8_t my_addr);
-
-int8_t rssi_convert(uint8_t Rssi);
-uint8_t check_crc(uint8_t lqi);
-uint8_t lqi_convert(uint8_t lqi);
-float get_temp(uint16_t wait);
-
-void set_myaddr(uint8_t addr);
-void set_channel(uint8_t channel);
-void set_ISM(uint8_t ism_freq);
-void set_mode(uint8_t mode);
-void set_output_power_level(int8_t dbm);
-void set_patable(uint8_t *patable_arr);
-void set_fec(uint8_t cfg);
-void set_data_whitening(uint8_t cfg);
-void set_modulation_type(uint8_t cfg);
-void set_preamble_len(uint8_t cfg);
-void set_manchester_encoding(uint8_t cfg);
-void set_sync_mode(uint8_t cfg);
-void set_datarate(uint8_t mdmcfg4, uint8_t mdmcfg3, uint8_t deviant);
-
-
-#endif // CC1100_H
+#endif /*_CC1101_PRIVATE_H*/
