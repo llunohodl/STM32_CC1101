@@ -144,6 +144,8 @@ uint8_t cc1101_spi_read_register(uint8_t spi_instr);
 void cc1101_spi_write_register(uint8_t spi_instr, uint8_t value);
 void cc1101_spi_write_burst(uint8_t spi_instr, uint8_t *pArr, uint8_t length, uint8_t *rdback);
 
+uint8_t cc1101_packet_available();
+
 /* RF configuration setup defined at libcc1100_rf_config.c */
 
 void cc1101_configure();

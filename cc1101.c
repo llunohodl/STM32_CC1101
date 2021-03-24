@@ -36,6 +36,7 @@ static uint8_t cc1101_idle(void)
     return 1;
 }
 
+#if 0 // Never used
 // Transmit mode
 //====================
 static uint8_t cc1101_transmit(void)
@@ -58,6 +59,7 @@ static uint8_t cc1101_transmit(void)
     }
     return res;
 }
+#endif
 
 // Receive mode
 //===================
@@ -301,7 +303,7 @@ int8_t cc1101_rssi(){
 // The Link Quality Indicator estimates how easily a received signal can be
 // demodulated. Calculated over the 64 symbols following the sync word 
 uint8_t cc1101_lqi(){
-    return last_rssi_dbm;
+    return last_lqi;
 }
 
 // Get The last CRC comparison matched. 
