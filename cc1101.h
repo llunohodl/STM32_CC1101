@@ -43,10 +43,11 @@ uint8_t cc1101_write(uint8_t to_addr, uint8_t *txbuffer, uint8_t len);
 // Receive data
 //      from_addr - pointer to store addres of sender, if it not nedded, it may set to NULL
 //      rxbuffer - pointer for data buffer (length <61)
+//      lenmax - data bufer length (<61)
 //      waitms - [ms] time for vait paket (task delay used), for simply check without delay set to 0
 //      broadcast - pointer to broadcast flag,  if it not nedded, it may set to NULL
 //      return 0 if no data present or data length (<61)
-uint8_t cc1101_read(uint8_t* from_addr, uint8_t *rxbuffer, uint32_t waitms, uint8_t* broadcast);
+uint8_t cc1101_read(uint8_t* from_addr, uint8_t *rxbuffer, uint8_t lenmax, uint32_t waitms, uint8_t* broadcast);
 
 // Set address
 void cc1101_set_addr(uint8_t addr);

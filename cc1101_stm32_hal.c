@@ -114,6 +114,7 @@ void cc1101_spi_write_strobe(uint8_t spi_instr)
 
 // Read one Register
 //-----------------------------------------------------------
+#pragma optimize=none
 uint8_t cc1101_spi_read_register(uint8_t spi_instr)
 {
 	uint8_t buf[2];

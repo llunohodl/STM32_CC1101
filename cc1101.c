@@ -36,31 +36,6 @@ static uint8_t cc1101_idle(void)
     return 1;
 }
 
-#if 0 // Never used
-// Transmit mode
-//====================
-static uint8_t cc1101_transmit(void)
-{
-    uint8_t marcstate, res = 1;
-
-    cc1101_spi_write_strobe(STX);		//sends the data over air
-
-    marcstate = 0xFF;			//set unknown/dummy state value
-    while( marcstate != 0x01)   //0x01 = ILDE after sending data
-    {
-    	//read out state of cc1100 to be sure in IDLE and TX is finished
-    	marcstate = (cc1101_spi_read_register(MARCSTATE) & 0x1F);
-        if (marcstate == 0x16) {
-        	//flush the TX_fifo content
-        	cc1101_spi_write_strobe(SFTX);
-        	res = 0;
-        }
-        cc1101_delay(1);
-    }
-    return res;
-}
-#endif
-
 // Receive mode
 //===================
 static uint8_t cc1101_receive(void)
@@ -139,14 +114,18 @@ uint8_t cc1101_init(uint8_t addr, uint8_t channel, int8_t power)
     }
 
     cc1101_configure();
-
-    //GDO0 HW to 0 
+    
+     //GDO0 HW to 0 
     cc1101_spi_write_register(IOCFG0,0x2F);
     //GDO1 HW to 0 
     cc1101_spi_write_register(IOCFG1,0x2F);
     //GDO2 Asserts (goes to high) when: 
     //      a packet has been received with CRC OK. De-asserts when the first byte is read from the RX FIFO
-    cc1101_spi_write_register(IOCFG2,0x07);
+    cc1101_spi_write_register(IOCFG2,0x06);
+    //Main Radio Control State Machine Configuration 1
+    //      what should happen when a packet has been received: (0x00<<2) IDLE
+    //      what should happen when a packet has been sent (TX): (0x03<<0) RX
+    cc1101_spi_write_register(MCSM1,0x03);   
 
     //set channel
     cc1101_set_channel(channel);
@@ -161,7 +140,7 @@ uint8_t cc1101_init(uint8_t addr, uint8_t channel, int8_t power)
     cc1101_idle();                          //set to ILDE first
 	cc1101_set_power(0);        //set PA level in dbm
 
-	cc1101_spi_write_register(IOCFG2, 0x06); //set module in sync mode detection mode
+
     
     //set to RECEIVE mode
     cc1101_receive();
@@ -185,29 +164,31 @@ uint8_t cc1101_write(uint8_t to_addr, uint8_t *txbuffer, uint8_t len)
 {
     uint8_t TXdata[64];
     if(len>64-3) len = 64-3;
-    TXdata[0]=len+2;
+    TXdata[0]=len+2;        //Length of 2 adress + payload
     TXdata[1]=to_addr;      //To address
     TXdata[2]=self_addr;    //From address
-    memcpy(TXdata+3,txbuffer,len);
-    cc1101_spi_write_burst(TXFIFO_BURST,TXdata,len, NULL);   //loads the data in cc1100 buffer
+    memcpy(&TXdata[3],txbuffer,len);
+    cc1101_spi_write_burst(TXFIFO_BURST,TXdata,len+3, NULL);   //loads the data in cc1100 buffer
     //send data over air
     uint8_t marcstate = 0xFF;
-
     cc1101_spi_write_strobe(STX);		//sends the data over air
-
-    do {
-    	//read out state of cc1101 to be sure in IDLE and TX is finished
+    uint8_t timeout = 88; //110bytes on 10kBod 
+    while(1){
+    	cc1101_delay(1);
     	marcstate = (cc1101_spi_read_register(MARCSTATE) & 0x1F);
-        if (marcstate == 0x16) { //0x16 = TXFIFO_UNDERFLOW
+        if (marcstate == 0x16 || timeout == 0) { //0x16 = TXFIFO_UNDERFLOW
         	//flush the TX_fifo content
         	cc1101_spi_write_strobe(SFTX);
+            cc1101_delay(1);
             cc1101_receive(); //receive mode
-            return 1; 
+            return 0; 
         }
-        cc1101_delay(1);
-    }while(marcstate != 0x01); //0x01 = ILDE after sending data
-
-    cc1101_receive(); //receive mode
+        if(marcstate == 0x0D){ // 0x0D = RX (MCSM1&0x03 == 0x03)
+            return 1;
+        }
+        timeout--;
+    }
+    //cc1101_receive(); //receive mode
     return 0; 
 }
 
@@ -224,23 +205,35 @@ static void cc1101_get_rx_info()
 }
 
 // Receive data
-uint8_t cc1101_read(uint8_t* from_addr, uint8_t *rxbuffer, uint32_t waitms, uint8_t* broadcast)
+
+uint8_t cc_debug[64];
+uint8_t cc1101_read(uint8_t* from_addr, uint8_t *rxbuffer, uint8_t lenmax, uint32_t waitms, uint8_t* broadcast)
 {
+    cc1101_receive();
+    uint8_t fifo_len = 0;
     do{
         if (cc1101_packet_available() == 1)                        //if RF package received check package acknowledge
         {
-            uint8_t fifo_len = cc1101_spi_read_register(RXBYTES);
-            if (fifo_len <= 64) {
-                uint8_t fifo_len = cc1101_spi_read_register(RXFIFO_SINGLE_BYTE); 
+            do{
+              cc1101_delay(1);
+            }while(cc1101_packet_available() == 1);
+            fifo_len = cc1101_spi_read_register(RXBYTES);
+            if (((fifo_len&0x7F)!=0)&&((fifo_len&0x80)==0)) {
+                fifo_len = cc1101_spi_read_register(RXFIFO_SINGLE_BYTE); 
+                cc_debug[0] = fifo_len;
                 rxbuffer[0]= cc1101_spi_read_register(RXFIFO_SINGLE_BYTE);  //To address
+                cc_debug[1] = rxbuffer[0];
                 if(broadcast){ *broadcast = rxbuffer[0]!=self_addr; }
                 rxbuffer[0]= cc1101_spi_read_register(RXFIFO_SINGLE_BYTE);  //From address
-                if(from_addr){ *from_addr = rxbuffer[0]; }               
-                for(uint8_t i=0;i<fifo_len-3;i++){
+                cc_debug[2] = rxbuffer[0];
+                if(from_addr){ *from_addr = rxbuffer[0]; }  
+                fifo_len-=2;
+                if(fifo_len>lenmax) fifo_len=lenmax;
+                for(uint8_t i=0;i<fifo_len ;i++){
                     rxbuffer[i]=cc1101_spi_read_register(RXFIFO_SINGLE_BYTE);
+                    cc_debug[3+i] = rxbuffer[i];
                 }
-                fifo_len-=3;
-                cc1101_get_rx_info();
+                //cc1101_get_rx_info();
             }else{
                 fifo_len=0;
             } 
