@@ -121,8 +121,10 @@ uint8_t cc1101_init(uint8_t addr, uint8_t channel, int8_t power)
     // CC1100 initial reset
     cc1101_reset();
 
-    cc1101_spi_write_strobe(SFTX); cc1101_delayMicroseconds(100); //flush the TX_fifo content
-    cc1101_spi_write_strobe(SFRX); cc1101_delayMicroseconds(100); //flush the RX_fifo content
+    cc1101_spi_write_strobe(SFTX); 
+    cc1101_delayMicroseconds(100); //flush the TX_fifo content
+    cc1101_spi_write_strobe(SFRX); 
+    cc1101_delayMicroseconds(100); //flush the RX_fifo content
 
     uint8_t partnum = cc1101_spi_read_register(PARTNUM); //reads CC1100 part number
     uint8_t version = cc1101_spi_read_register(VERSION); //reads CC1100 version number
@@ -183,13 +185,15 @@ void cc1101_deinit()
 // Send packet
 uint8_t cc1101_write(uint8_t to_addr, uint8_t *txbuffer, uint8_t len)
 {
-    uint8_t TXdata[64];
+    uint8_t TXdata[65];
     if(len>64-3) len = 64-3;
-    TXdata[0]=len+2;        //Length of 2 adress + payload
-    TXdata[1]=to_addr;      //To address
-    TXdata[2]=self_addr;    //From address
-    memcpy(&TXdata[3],txbuffer,len);
-    cc1101_spi_write_burst(TXFIFO_BURST,TXdata,len+3);   //loads the data in cc1100 buffer
+    TXdata[0]=TXFIFO_BURST;
+    TXdata[1]=len+2;        //Length of 2 adress + payload
+    TXdata[2]=to_addr;      //To address
+    TXdata[3]=self_addr;    //From address
+    memcpy(TXdata+4,txbuffer,len);
+    cc1101_spi_send(TXdata, len+4);
+    //cc1101_spi_write_burst(TXFIFO_BURST,TXdata,len+3);   //loads the data in cc1100 buffer
     //send data over air
     uint8_t marcstate = 0xFF;
     cc1101_spi_write_strobe(STX);		//sends the data over air
@@ -242,18 +246,21 @@ uint8_t cc1101_read(uint8_t* from_addr, uint8_t *rxbuffer, uint8_t lenmax, uint3
                 cc1101_receive();
             }else if ((fifo_len&0x7F)!=0){
                 if(fifo_len>64) fifo_len=64;
-                uint8_t FIFO[64];
-                cc1101_spi_read_burst(RXFIFO_BURST,FIFO,fifo_len);
+                uint8_t FIFO[65];
+                FIFO[0]=RXFIFO_BURST;
+                memset(FIFO+1,0xFF,fifo_len);
+                cc1101_spi_send(FIFO,fifo_len+1);
+                //cc1101_spi_read_burst(RXFIFO_BURST,FIFO,fifo_len);
                 cc1101_receive();
-                if(FIFO[0]!=fifo_len-1){ //Wrong Len
+                if(FIFO[1]!=fifo_len-1){ //Wrong Len
                   fifo_len=0;
                   continue;
                 }
-                if(broadcast){ *broadcast = FIFO[1]!=self_addr; }
-                if(from_addr){ *from_addr = FIFO[2]; } 
-                fifo_len=FIFO[0]-2;
+                if(broadcast){ *broadcast = FIFO[2]!=self_addr; }
+                if(from_addr){ *from_addr = FIFO[3]; } 
+                fifo_len=FIFO[1]-2;
                 if(fifo_len>lenmax+3) fifo_len=lenmax+3;
-                memcpy(rxbuffer,FIFO+3,fifo_len);
+                memcpy(rxbuffer,FIFO+4,fifo_len);
                 return fifo_len;
             }   
         }
