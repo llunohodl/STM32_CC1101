@@ -286,17 +286,19 @@ void cc1101_set_channel(uint8_t channel)
 extern const uint8_t Patable[];
 void cc1101_set_power(int8_t dBm)
 {
-    uint8_t pa = 0;
-    if      (dBm <= -30) pa = 0x00;
-    else if (dBm <= -20) pa = 0x01;
-    else if (dBm <= -15) pa = 0x02;
-    else if (dBm <= -10) pa = 0x03;
-    else if (dBm <= 0)   pa = 0x04;
-    else if (dBm <= 5)   pa = 0x05;
-    else if (dBm <= 7)   pa = 0x06;
-    else                 pa = 0x07;
+    //Save FREND0.LODIV_BUF_CURRENT_TX set from SmartRF Studio
+    //PA for -30dBm or lower
+    uint8_t pa = cc1101_spi_read_register(FREND0)&0xF8; 
+    
+    if (dBm <= -20)      pa |= 0x01;
+    else if (dBm <= -15) pa |= 0x02;
+    else if (dBm <= -10) pa |= 0x03;
+    else if (dBm <= 0)   pa |= 0x04;
+    else if (dBm <= 5)   pa |= 0x05;
+    else if (dBm <= 7)   pa |= 0x06;
+    else                 pa |= 0x07;
 
-    cc1101_spi_write_register(FREND0,Patable[pa]);
+    cc1101_spi_write_register(FREND0,pa);
 }
 
 
