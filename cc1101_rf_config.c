@@ -63,5 +63,5 @@ void cc1101_configure(){
     cc1101_spi_write_register(TEST1,0x35);   //Various Test Settings
     cc1101_spi_write_register(TEST0,0x09);   //Various Test Settings
 
-    cc1101_spi_write_burst(PATABLE_BURST,Patable,8, NULL);
+    cc1101_spi_write_burst(PATABLE_BURST,Patable,8);
 }

@@ -28,7 +28,7 @@ This library use [SmartRF Studio](https://www.ti.com/tool/SMARTRFTM-STUDIO) for 
     - "Footer" set to
     ```
     
-        cc1101_spi_write_burst(PATABLE_BURST,Patable,8, NULL);
+        cc1101_spi_write_burst(PATABLE_BURST,Patable,8);
     }
     ```
 7. After thet your see in content for your [`cc1101_rf_config.c`](cc1101_rf_config.c) in "Registers" tab

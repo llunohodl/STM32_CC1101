@@ -138,17 +138,25 @@ void cc1101_spi_write_register(uint8_t spi_instr, uint8_t value)
 
 // Write several consecutive registers at once
 //-----------------------------------------------------------------------------------------------+------
-void cc1101_spi_write_burst(uint8_t spi_instr, uint8_t *pArr, uint8_t length, uint8_t *rdback)
+void cc1101_spi_write_burst(uint8_t spi_instr, uint8_t *pArr, uint8_t length)
 {
-    if(length>128) length = 128;
-	uint8_t buf[129];
+    if(length>70) length = 70;
+	uint8_t buf[70];
 	buf[0] = spi_instr | WRITE_BURST;
 	memcpy(buf+1, pArr, length);
-
     cc1101_spi_send(buf, length+1);
-    if (rdback) {
-    	memcpy(rdback, buf+1, length);
-    }
+}
+
+// Read several consecutive registers at once
+//-----------------------------------------------------------------------------------------------+------
+void cc1101_spi_read_burst(uint8_t spi_instr, uint8_t *pArr, uint8_t length)
+{
+    if(length>70) length = 70;
+	uint8_t buf[70];
+	buf[0] = spi_instr | READ_BURST;
+	memset(buf+1,0xFF, length);
+    cc1101_spi_send(buf, length+1);
+    memcpy(pArr,buf+1, length);
 }
 
 /* Pin and Port names from CubeMX

@@ -23,16 +23,29 @@ static uint8_t self_addr = 0;
 //=================
 static uint8_t cc1101_idle(void)
 {
-    uint8_t marcstate;
-
-    cc1101_spi_write_strobe(SIDLE);
-
-    marcstate = 0xFF;			//set unknown/dummy state value
-    while (marcstate != 0x01)	//0x01 = cc1101_idle
-    {
-        marcstate = (cc1101_spi_read_register(MARCSTATE) & 0x1F);
-        cc1101_delay(1);
+    uint8_t marcstate = (cc1101_spi_read_register(MARCSTATE) & 0x1F);
+    if(marcstate == 0x01){
+        return 1;
+    }else if(marcstate == 0x11){ // RXFIFO_OVERFLOW  
+        //  RXFIFO_OVERFLOW->IDLE
+        cc1101_spi_write_strobe(SFRX); //Flash RX FIFO and go to IDLE
+    }else if(marcstate == 0x16){ //TXFIFO_UNDERFLOW
+        //  TXFIFO_UNDERFLOW->IDLE
+        cc1101_spi_write_strobe(SFTX); //Flash TX FIFO and go to IDLE
+    }else{
+        //  any state->IDLE
+        cc1101_spi_write_strobe(SIDLE);
     }
+    uint8_t times = 0;
+    do{
+        cc1101_delay(1);
+        marcstate = (cc1101_spi_read_register(MARCSTATE) & 0x1F);        
+        times++;
+        if((times&0x03) == 0){ 
+          cc1101_spi_write_strobe(SIDLE);
+          cc1101_delay(1);
+        }
+    }while(marcstate != 0x01); //0x01 = cc1101_idle
     return 1;
 }
 
@@ -40,20 +53,28 @@ static uint8_t cc1101_idle(void)
 //===================
 static uint8_t cc1101_receive(void)
 {
-    uint8_t marcstate;
-
-    cc1101_idle();					//sets to idle first.
-    cc1101_spi_write_strobe(SRX);		//writes receive strobe (receive mode)
-
-    marcstate = 0xFF;			//set unknown/dummy state value
-    while (marcstate != 0x0D)	//0x0D = RX
-    {
-    	//read out state of cc1100 to be sure in RX
-        marcstate = (cc1101_spi_read_register(MARCSTATE) & 0x1F);
-        cc1101_delay(1);
+    uint8_t marcstate = (cc1101_spi_read_register(MARCSTATE) & 0x1F);
+    if(marcstate == 0x0D){       // RX
+        return 1;
+    }else{
+        //  any state->IDLE
+        cc1101_idle();
     }
+    //Start RX: IDLE->FS_WAKEUP->(CALIBRATE)->SETTLING->RX
+    cc1101_spi_write_strobe(SRX);	
+    uint8_t times = 0;
+    do{
+    	cc1101_delay(1);
+        marcstate = (cc1101_spi_read_register(MARCSTATE) & 0x1F);
+        times++;
+        if((times&0x03) == 0){
+          cc1101_spi_write_strobe(SRX);
+          cc1101_delay(1);
+        }
+    }while (marcstate != 0x0D);	//0x0D = RX
     return 1;
 }
+
 
 
 // CC1101 reset function
@@ -121,7 +142,7 @@ uint8_t cc1101_init(uint8_t addr, uint8_t channel, int8_t power)
     cc1101_spi_write_register(IOCFG1,0x2F);
     //GDO2 Asserts (goes to high) when: 
     //      a packet has been received with CRC OK. De-asserts when the first byte is read from the RX FIFO
-    cc1101_spi_write_register(IOCFG2,0x06);
+    cc1101_spi_write_register(IOCFG2,0x07);
     //Main Radio Control State Machine Configuration 1
     //      what should happen when a packet has been received: (0x00<<2) IDLE
     //      what should happen when a packet has been sent (TX): (0x03<<0) RX
@@ -168,7 +189,7 @@ uint8_t cc1101_write(uint8_t to_addr, uint8_t *txbuffer, uint8_t len)
     TXdata[1]=to_addr;      //To address
     TXdata[2]=self_addr;    //From address
     memcpy(&TXdata[3],txbuffer,len);
-    cc1101_spi_write_burst(TXFIFO_BURST,TXdata,len+3, NULL);   //loads the data in cc1100 buffer
+    cc1101_spi_write_burst(TXFIFO_BURST,TXdata,len+3);   //loads the data in cc1100 buffer
     //send data over air
     uint8_t marcstate = 0xFF;
     cc1101_spi_write_strobe(STX);		//sends the data over air
@@ -179,11 +200,12 @@ uint8_t cc1101_write(uint8_t to_addr, uint8_t *txbuffer, uint8_t len)
         if (marcstate == 0x16 || timeout == 0) { //0x16 = TXFIFO_UNDERFLOW
         	//flush the TX_fifo content
         	cc1101_spi_write_strobe(SFTX);
-            cc1101_delay(1);
+            cc1101_delayMicroseconds(100);
             cc1101_receive(); //receive mode
             return 0; 
         }
         if(marcstate == 0x0D){ // 0x0D = RX (MCSM1&0x03 == 0x03)
+            //Tx complete
             return 1;
         }
         timeout--;
@@ -206,42 +228,34 @@ static void cc1101_get_rx_info()
 
 // Receive data
 
-uint8_t cc_debug[64];
 uint8_t cc1101_read(uint8_t* from_addr, uint8_t *rxbuffer, uint8_t lenmax, uint32_t waitms, uint8_t* broadcast)
 {
-    cc1101_receive();
+    cc1101_receive(); //Swith to RX mode (only if needed)
     uint8_t fifo_len = 0;
     do{
         if (cc1101_packet_available() == 1)                        //if RF package received check package acknowledge
         {
-            do{
-              cc1101_delay(1);
-            }while(cc1101_packet_available() == 1);
             fifo_len = cc1101_spi_read_register(RXBYTES);
-            if (((fifo_len&0x7F)!=0)&&((fifo_len&0x80)==0)) {
-                fifo_len = cc1101_spi_read_register(RXFIFO_SINGLE_BYTE); 
-                cc_debug[0] = fifo_len;
-                rxbuffer[0]= cc1101_spi_read_register(RXFIFO_SINGLE_BYTE);  //To address
-                cc_debug[1] = rxbuffer[0];
-                if(broadcast){ *broadcast = rxbuffer[0]!=self_addr; }
-                rxbuffer[0]= cc1101_spi_read_register(RXFIFO_SINGLE_BYTE);  //From address
-                cc_debug[2] = rxbuffer[0];
-                if(from_addr){ *from_addr = rxbuffer[0]; }  
-                fifo_len-=2;
-                if(fifo_len>lenmax) fifo_len=lenmax;
-                for(uint8_t i=0;i<fifo_len ;i++){
-                    rxbuffer[i]=cc1101_spi_read_register(RXFIFO_SINGLE_BYTE);
-                    cc_debug[3+i] = rxbuffer[i];
+            if(fifo_len&0x80){ //RXFIFO_OVERFLOW
+                cc1101_spi_write_strobe(SFRX);
+                cc1101_delayMicroseconds(100);
+                cc1101_receive();
+            }else if ((fifo_len&0x7F)!=0){
+                if(fifo_len>64) fifo_len=64;
+                uint8_t FIFO[64];
+                cc1101_spi_read_burst(RXFIFO_BURST,FIFO,fifo_len);
+                cc1101_receive();
+                if(FIFO[0]!=fifo_len-1){ //Wrong Len
+                  fifo_len=0;
+                  continue;
                 }
-                //cc1101_get_rx_info();
-            }else{
-                fifo_len=0;
-            } 
-            cc1101_idle();
-            cc1101_spi_write_strobe(SFRX);
-            cc1101_delayMicroseconds(100);
-            cc1101_receive(); 
-            return fifo_len;    
+                if(broadcast){ *broadcast = FIFO[1]!=self_addr; }
+                if(from_addr){ *from_addr = FIFO[2]; } 
+                fifo_len=FIFO[0]-2;
+                if(fifo_len>lenmax+3) fifo_len=lenmax+3;
+                memcpy(rxbuffer,FIFO+3,fifo_len);
+                return fifo_len;
+            }   
         }
         if(waitms>=10){
             cc1101_delay(10);
@@ -250,7 +264,6 @@ uint8_t cc1101_read(uint8_t* from_addr, uint8_t *rxbuffer, uint8_t lenmax, uint3
             cc1101_delay(waitms);
             waitms=0;
         }
-
     } while (waitms);               
     return 0;  //No data                                                 
 }
