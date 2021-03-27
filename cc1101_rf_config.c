@@ -13,13 +13,13 @@
 // Modulated = true 
 // Modulation Format = GFSK 
 // PA Ramping = true 
-// Packet Length = 62 
+// Packet Length = 64 
 // Packet Length Mode = Variable packet length mode. Packet length configured by the first byte after sync word 
 // Preamble Count = 8 
 // RX Filter BW = 101.562500 
 // Sync Word Qualifier Mode = 30/32 sync word bits detected 
 // TX Power = 10 
-// Whitening = false 
+// Whitening = true 
 // PA table 
 #define PA_TABLE {0x00,0x12,0x0e,0x34,0x60,0xc5,0xc1,0xc0}
 #include "cc1101_private.h"
@@ -35,9 +35,8 @@ void cc1101_configure(){
     cc1101_spi_write_register(FIFOTHR,0x47); //RX FIFO and TX FIFO Thresholds
     cc1101_spi_write_register(SYNC1,0x19);   //Sync Word, High Byte
     cc1101_spi_write_register(SYNC0,0x3D);   //Sync Word, Low Byte
-    cc1101_spi_write_register(PKTLEN,0x3E);  //Packet Length
+    cc1101_spi_write_register(PKTLEN,0x40);  //Packet Length
     cc1101_spi_write_register(PKTCTRL1,0x0A);//Packet Automation Control
-    cc1101_spi_write_register(PKTCTRL0,0x05);//Packet Automation Control
     cc1101_spi_write_register(ADDR,0xFF);    //Device Address
     cc1101_spi_write_register(FSCTRL1,0x06); //Frequency Synthesizer Control
     cc1101_spi_write_register(FREQ2,0x10);   //Frequency Control Word, High Byte

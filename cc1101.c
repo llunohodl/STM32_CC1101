@@ -138,13 +138,36 @@ uint8_t cc1101_init(uint8_t addr, uint8_t channel, int8_t power)
 
     cc1101_configure();
     
-     //GDO0 HW to 0 
-    cc1101_spi_write_register(IOCFG0,0x2F);
-    //GDO1 HW to 0 
-    cc1101_spi_write_register(IOCFG1,0x2F);
+    //Set setings for correct library work 
+    //      potential rewriing default settings from SmartRF Studio
+    
     //GDO2 Asserts (goes to high) when: 
     //      a packet has been received with CRC OK. De-asserts when the first byte is read from the RX FIFO
     cc1101_spi_write_register(IOCFG2,0x07);
+    
+    //Packet Length
+    //       PKTLEN.PACKET_LENGTH=64 (maximum)
+    cc1101_spi_write_register(PKTLEN,64);
+    
+    // Packet Automation Control 1
+    //      (0<<5) PKTCTRL1.PQT[2:0]  -> A sync word is always accepted.
+    //      (1<<3) PKTCTRL1.CRC_AUTOFLUSH  -> 
+    //            Automatic flush of RX FIFO when CRC is not OK. This requires that
+    //            only one packet is in the RXIFIFO and that packet length is limited to the
+    //            RX FIFO size.
+    //      (0<<2) PKTCTRL1.APPEND_STATUS  -> Disable append status to end of FIFO
+    //      (2<<0) PKTCTRL1.LENGTH_CONFIG[1:0] -> Address check and 0 (0x00) broadcast
+    cc1101_spi_write_register(PKTCTRL1,0x0A);
+    
+    // Packet Automation Control 0
+    //      (1<<6) PKTCTRL0.WHITE_DATA -> Whitening on
+    //      (0<<4) PKTCTRL0.PKT_FORMAT[1:0] -> Normal mode, use FIFOs for RX and TX
+    //      (1<<2) PKTCTRL0.CRC_EN -> 
+    //            CRC calculation in TX and CRC check in RX enabled
+    //      (1<<0) PKTCTRL0.LENGTH_CONFIG[1:0] -> 
+    //            Variable packet length mode. Packet length configured by the first byte after sync word
+    cc1101_spi_write_register(PKTCTRL0,0x45);
+    
     //Main Radio Control State Machine Configuration 1
     //      what should happen when a packet has been received: (0x00<<2) IDLE
     //      what should happen when a packet has been sent (TX): (0x03<<0) RX
@@ -185,15 +208,14 @@ void cc1101_deinit()
 // Send packet
 uint8_t cc1101_write(uint8_t to_addr, uint8_t *txbuffer, uint8_t len)
 {
-    uint8_t TXdata[65];
+    uint8_t buff[65];
     if(len>64-3) len = 64-3;
-    TXdata[0]=TXFIFO_BURST;
-    TXdata[1]=len+2;        //Length of 2 adress + payload
-    TXdata[2]=to_addr;      //To address
-    TXdata[3]=self_addr;    //From address
-    memcpy(TXdata+4,txbuffer,len);
-    cc1101_spi_send(TXdata, len+4);
-    //cc1101_spi_write_burst(TXFIFO_BURST,TXdata,len+3);   //loads the data in cc1100 buffer
+    buff[0]=TXFIFO_BURST;
+    buff[1]=len+2;        //Length of 2 adress + payload
+    buff[2]=to_addr;      //To address
+    buff[3]=self_addr;    //From address
+    memcpy(buff+4,txbuffer,len);
+    cc1101_spi_send(buff, len+4);
     //send data over air
     uint8_t marcstate = 0xFF;
     cc1101_spi_write_strobe(STX);		//sends the data over air
@@ -235,33 +257,33 @@ static void cc1101_get_rx_info()
 uint8_t cc1101_read(uint8_t* from_addr, uint8_t *rxbuffer, uint8_t lenmax, uint32_t waitms, uint8_t* broadcast)
 {
     cc1101_receive(); //Swith to RX mode (only if needed)
-    uint8_t fifo_len = 0;
+    uint8_t len = 0;
     do{
         if (cc1101_packet_available() == 1)                        //if RF package received check package acknowledge
         {
-            fifo_len = cc1101_spi_read_register(RXBYTES);
-            if(fifo_len&0x80){ //RXFIFO_OVERFLOW
+            len = cc1101_spi_read_register(RXBYTES);
+            if(len&0x80){ //RXFIFO_OVERFLOW
                 cc1101_spi_write_strobe(SFRX);
                 cc1101_delayMicroseconds(100);
                 cc1101_receive();
-            }else if ((fifo_len&0x7F)!=0){
-                if(fifo_len>64) fifo_len=64;
-                uint8_t FIFO[65];
-                FIFO[0]=RXFIFO_BURST;
-                memset(FIFO+1,0xFF,fifo_len);
-                cc1101_spi_send(FIFO,fifo_len+1);
-                //cc1101_spi_read_burst(RXFIFO_BURST,FIFO,fifo_len);
+            }else if ((len&0x7F)!=0){
+                if(len>64) len=64;
+                uint8_t buff[65];
+                buff[0]=RXFIFO_BURST;
+                memset(buff+1,0xFF,len);
+                cc1101_spi_send(buff,len+1);
+                //cc1101_get_rx_info();
                 cc1101_receive();
-                if(FIFO[1]!=fifo_len-1){ //Wrong Len
-                  fifo_len=0;
+                if(buff[1]!=len-1){ //Wrong Len
+                  len=0;
                   continue;
                 }
-                if(broadcast){ *broadcast = FIFO[2]!=self_addr; }
-                if(from_addr){ *from_addr = FIFO[3]; } 
-                fifo_len=FIFO[1]-2;
-                if(fifo_len>lenmax+3) fifo_len=lenmax+3;
-                memcpy(rxbuffer,FIFO+4,fifo_len);
-                return fifo_len;
+                if(broadcast){ *broadcast = buff[2]!=self_addr; }
+                if(from_addr){ *from_addr = buff[3]; } 
+                len=buff[1]-2;
+                if(len>lenmax+3) len=lenmax+3;
+                memcpy(rxbuffer,buff+4,len);
+                return len;
             }   
         }
         if(waitms>=10){
